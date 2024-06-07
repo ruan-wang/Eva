@@ -3,20 +3,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
 from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
-import torch
 import sacrebleu
-
-# 准备GPT-2模型和tokenizer用于计算Perplexity
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-model = GPT2LMHeadModel.from_pretrained("gpt2")
-
-def calculate_perplexity(text):
-    inputs = tokenizer(text, return_tensors="pt")
-    with torch.no_grad():
-        outputs = model(**inputs, labels=inputs["input_ids"])
-        loss = outputs.loss
-    return torch.exp(loss).item()
 
 def evaluate_metrics(y_true, y_pred):
     references = [[ref] for ref in y_true]
@@ -24,9 +11,6 @@ def evaluate_metrics(y_true, y_pred):
 
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-
-    # 计算Perplexity
-    perplexity_scores = [calculate_perplexity(text) for text in y_pred]
 
     # 计算ROUGE
     rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(y_true, y_pred)]
@@ -58,8 +42,7 @@ def evaluate_metrics(y_true, y_pred):
         "ROUGE-2": rouge2,
         "ROUGE-L": rougeL,
         "BLEU": avg_bleu,
-        "SacreBLEU": sacre_bleu.score,
-        "Perplexity": np.mean(perplexity_scores)
+        "SacreBLEU": sacre_bleu.score
     }
     
     return results
@@ -81,5 +64,3 @@ if st.button("评估"):
         st.subheader("评估结果")
         for metric, score in results.items():
             st.write(f"{metric}: {score:.4f}")
-
-
