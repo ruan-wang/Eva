@@ -66,8 +66,8 @@ def evaluate_metrics(y_true, y_pred):
 
 st.title("文本评估工具")
 
-true_labels_input = st.text_area("输入真实标签 (每个标签用逗号和空格分隔)", "this is a test, another test")
-pred_labels_input = st.text_area("输入预测标签 (每个标签用逗号和空格分隔)", "this is a test, another example")
+true_labels_input = st.text_area("输入真实标签 (专家认定符合要求的参考教学设计)", "this is a test, another test")
+pred_labels_input = st.text_area("输入预测标签 (大语言模型输出的教学设计，切记在内容和形式上与专家认定标准保持一致)", "this is a test, another example")
 
 if st.button("评估"):
     y_true = true_labels_input.split(", ")
