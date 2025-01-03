@@ -65,34 +65,69 @@ def calculate_precision_recall(reference, hypothesis, stopwords=None):
 
     return precision, recall
 
+def compute_rouge(reference, hypothesis):
+    ref_tokens = chinese_tokenize(reference)
+    hyp_tokens = chinese_tokenize(hypothesis)
+
+    # 计算 ROUGE-1 (unigram)
+    ref_set = set(ref_tokens)
+    hyp_set = set(hyp_tokens)
+    common_tokens = ref_set & hyp_set
+    precision_1 = len(common_tokens) / len(hyp_set) if len(hyp_set) > 0 else 0
+    recall_1 = len(common_tokens) / len(ref_set) if len(ref_set) > 0 else 0
+    f1_1 = (2 * precision_1 * recall_1) / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 else 0
+
+    # 计算 ROUGE-2 (bigram)
+    ref_bigrams = set(zip(ref_tokens, ref_tokens[1:]))
+    hyp_bigrams = set(zip(hyp_tokens, hyp_tokens[1:]))
+    common_bigrams = ref_bigrams & hyp_bigrams
+    precision_2 = len(common_bigrams) / len(hyp_bigrams) if len(hyp_bigrams) > 0 else 0
+    recall_2 = len(common_bigrams) / len(ref_bigrams) if len(ref_bigrams) > 0 else 0
+    f1_2 = (2 * precision_2 * recall_2) / (precision_2 + recall_2) if (precision_2 + recall_2) > 0 else 0
+
+    # 计算 ROUGE-L (Longest Common Subsequence)
+    def longest_common_subsequence(a, b):
+        m = len(a)
+        n = len(b)
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+        for i in range(m):
+            for j in range(n):
+                if a[i] == b[j]:
+                    dp[i + 1][j + 1] = dp[i][j] + 1
+                else:
+                    dp[i + 1][j + 1] = max(dp[i + 1][j], dp[i][j + 1])
+        return dp[m][n]
+
+    lcs_len = longest_common_subsequence(ref_tokens, hyp_tokens)
+    precision_L = lcs_len / len(hyp_tokens) if len(hyp_tokens) > 0 else 0
+    recall_L = lcs_len / len(ref_tokens) if len(ref_tokens) > 0 else 0
+    f1_L = (2 * precision_L * recall_L) / (precision_L + recall_L) if (precision_L + recall_L) > 0 else 0
+
+    return f1_1, f1_2, f1_L
+
 def evaluate_metrics(y_true, y_pred, metric, stopwords=None):
     # 对真实标签和预测标签进行分词
-    references = [chinese_tokenize(ref) for ref in y_true]
-    hypotheses = [chinese_tokenize(pred) for pred in y_pred]
+    references = y_true
+    hypotheses = y_pred
 
-    # 去除停用词
-    references = [remove_stopwords(ref, stopwords) for ref in references]
-    hypotheses = [remove_stopwords(hyp, stopwords) for hyp in hypotheses]
+    # 计算 ROUGE 分数
+    rouge1, rouge2, rougeL = [], [], []
+    for ref, hyp in zip(references, hypotheses):
+        f1_1, f1_2, f1_L = compute_rouge(ref, hyp)
+        rouge1.append(f1_1)
+        rouge2.append(f1_2)
+        rougeL.append(f1_L)
+    
+    rouge1_score = np.mean(rouge1)
+    rouge2_score = np.mean(rouge2)
+    rougeL_score = np.mean(rougeL)
 
-    # 将分词后的文本转换为字符串（空格连接）
-    references_str = [' '.join(ref) for ref in references]
-    hypotheses_str = [' '.join(hyp) for hyp in hypotheses]
-
-    # 准备ROUGE scorer
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
-
-    # 计算ROUGE
-    rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(references_str, hypotheses_str)]
-    rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
-    rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
-    rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
-
-    # 计算BLEU
-    bleu_scores = [sentence_bleu([ref.split()], hyp.split()) for ref, hyp in zip(references_str, hypotheses_str)]
+    # 计算 BLEU
+    bleu_scores = [sentence_bleu([ref.split()], hyp.split()) for ref, hyp in zip(references, hypotheses)]
     avg_bleu = np.mean(bleu_scores)
 
-    # 计算SacreBLEU
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses_str, references_str)
+    # 计算 SacreBLEU
+    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
@@ -110,9 +145,9 @@ def evaluate_metrics(y_true, y_pred, metric, stopwords=None):
         "Recall (classification)": recall,
         "F1 Score": f1,
         "MCC": mcc,
-        "ROUGE-1": rouge1,
-        "ROUGE-2": rouge2,
-        "ROUGE-L": rougeL,
+        "ROUGE-1": rouge1_score,
+        "ROUGE-2": rouge2_score,
+        "ROUGE-L": rougeL_score,
         "BLEU": avg_bleu,
         "SacreBLEU": sacre_bleu.score,
         "Precision (generation)": generation_precision,
