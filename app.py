@@ -1,8 +1,7 @@
 import streamlit as st
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
-from nltk.translate.bleu_score import sentence_bleu
-from rouge_score import rouge_scorer
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 import sacrebleu
 import jieba  # 中文分词工具
 from collections import Counter
@@ -65,34 +64,85 @@ def calculate_precision_recall(reference, hypothesis, stopwords=None):
 
     return precision, recall
 
+# 计算ROUGE-1、ROUGE-2、ROUGE-L
+def compute_rouge(reference, hypothesis):
+    ref_tokens = chinese_tokenize(reference)
+    hyp_tokens = chinese_tokenize(hypothesis)
+
+    # 计算 ROUGE-1 (unigram)
+    ref_set = set(ref_tokens)
+    hyp_set = set(hyp_tokens)
+    common_tokens = ref_set & hyp_set
+    precision_1 = len(common_tokens) / len(hyp_set) if len(hyp_set) > 0 else 0
+    recall_1 = len(common_tokens) / len(ref_set) if len(ref_set) > 0 else 0
+    f1_1 = (2 * precision_1 * recall_1) / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 else 0
+
+    # 计算 ROUGE-2 (bigram)
+    ref_bigrams = set(zip(ref_tokens, ref_tokens[1:]))
+    hyp_bigrams = set(zip(hyp_tokens, hyp_tokens[1:]))
+    common_bigrams = ref_bigrams & hyp_bigrams
+    precision_2 = len(common_bigrams) / len(hyp_bigrams) if len(hyp_bigrams) > 0 else 0
+    recall_2 = len(common_bigrams) / len(ref_bigrams) if len(ref_bigrams) > 0 else 0
+    f1_2 = (2 * precision_2 * recall_2) / (precision_2 + recall_2) if (precision_2 + recall_2) > 0 else 0
+
+    # 计算 ROUGE-L (Longest Common Subsequence)
+    def longest_common_subsequence(a, b):
+        m = len(a)
+        n = len(b)
+        dp = [[0] * (n + 1) for _ in range(m + 1)]
+        for i in range(m):
+            for j in range(n):
+                if a[i] == b[j]:
+                    dp[i + 1][j + 1] = dp[i][j] + 1
+                else:
+                    dp[i + 1][j + 1] = max(dp[i + 1][j], dp[i][j + 1])
+        return dp[m][n]
+
+    lcs_len = longest_common_subsequence(ref_tokens, hyp_tokens)
+    precision_L = lcs_len / len(hyp_tokens) if len(hyp_tokens) > 0 else 0
+    recall_L = lcs_len / len(ref_tokens) if len(ref_tokens) > 0 else 0
+    f1_L = (2 * precision_L * recall_L) / (precision_L + recall_L) if (precision_L + recall_L) > 0 else 0
+
+    return f1_1, f1_2, f1_L
+
+# 计算 BLEU(new) 和 SacreBLEU(new)
+def compute_bleu_and_sacrebleu_new(references, hypotheses):
+    # BLEU(new): 使用加权的n-gram平滑方法
+    smoothing = SmoothingFunction().method4
+    bleu_scores = [sentence_bleu([ref.split()], hyp.split(), smoothing_function=smoothing) for ref, hyp in zip(references, hypotheses)]
+    avg_bleu_new = np.mean(bleu_scores)
+    
+    # SacreBLEU(new): 对 BLEU 分数进行修正
+    sacre_bleu_new = sacrebleu.corpus_bleu(hypotheses, references, tokenize='zh')
+    return avg_bleu_new, sacre_bleu_new.score
+
 def evaluate_metrics(y_true, y_pred, metric, stopwords=None):
     # 对真实标签和预测标签进行分词
-    references = [chinese_tokenize(ref) for ref in y_true]
-    hypotheses = [chinese_tokenize(pred) for pred in y_pred]
+    references = y_true
+    hypotheses = y_pred
 
     # 去除停用词
-    references = [remove_stopwords(ref, stopwords) for ref in references]
-    hypotheses = [remove_stopwords(hyp, stopwords) for hyp in hypotheses]
+    references = [remove_stopwords(chinese_tokenize(ref), stopwords) for ref in references]
+    hypotheses = [remove_stopwords(chinese_tokenize(hyp), stopwords) for hyp in hypotheses]
 
     # 将分词后的文本转换为字符串（空格连接）
     references_str = [' '.join(ref) for ref in references]
     hypotheses_str = [' '.join(hyp) for hyp in hypotheses]
 
-    # 准备ROUGE scorer
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    # 计算 ROUGE 分数
+    rouge1, rouge2, rougeL = [], [], []
+    for ref, hyp in zip(references_str, hypotheses_str):
+        f1_1, f1_2, f1_L = compute_rouge(ref, hyp)
+        rouge1.append(f1_1)
+        rouge2.append(f1_2)
+        rougeL.append(f1_L)
+    
+    rouge1_score = np.mean(rouge1)
+    rouge2_score = np.mean(rouge2)
+    rougeL_score = np.mean(rougeL)
 
-    # 计算ROUGE
-    rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(references_str, hypotheses_str)]
-    rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
-    rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
-    rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
-
-    # 计算BLEU
-    bleu_scores = [sentence_bleu([ref.split()], hyp.split()) for ref, hyp in zip(references_str, hypotheses_str)]
-    avg_bleu = np.mean(bleu_scores)
-
-    # 计算SacreBLEU
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses_str, references_str)
+    # 计算 BLEU(new) 和 SacreBLEU(new)
+    bleu_score_new, sacre_bleu_score_new = compute_bleu_and_sacrebleu_new(references_str, hypotheses_str)
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
@@ -110,11 +160,11 @@ def evaluate_metrics(y_true, y_pred, metric, stopwords=None):
         "Recall (classification)": recall,
         "F1 Score": f1,
         "MCC": mcc,
-        "ROUGE-1": rouge1,
-        "ROUGE-2": rouge2,
-        "ROUGE-L": rougeL,
-        "BLEU": avg_bleu,
-        "SacreBLEU": sacre_bleu.score,
+        "ROUGE-1": rouge1_score,
+        "ROUGE-2": rouge2_score,
+        "ROUGE-L": rougeL_score,
+        "BLEU(new)": bleu_score_new,
+        "SacreBLEU(new)": sacre_bleu_score_new,
         "Precision (generation)": generation_precision,
         "Recall (generation)": generation_recall
     }
@@ -127,7 +177,7 @@ st.header("计算其他指标")
 true_labels_input = st.text_area("输入真实标签 (专家认定符合要求的参考教学设计)", "这 是 一个 测试， 另一个 测试")
 pred_labels_input = st.text_area("输入预测标签 (大语言模型输出的教学设计，切记在内容和形式上与专家认定标准保持一致)", "这 是 一个 测试， 另一个 示例")
 
-metric = st.selectbox("选择评估指标", ["Accuracy", "Precision (classification)", "Recall (classification)", "F1 Score", "MCC", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BLEU", "SacreBLEU", "Precision (generation)", "Recall (generation)"])
+metric = st.selectbox("选择评估指标", ["Accuracy", "Precision (classification)", "Recall (classification)", "F1 Score", "MCC", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BLEU(new)", "SacreBLEU(new)", "Precision (generation)", "Recall (generation)"])
 
 if st.button("评估"):
     y_true = true_labels_input.split(", ")
