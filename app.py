@@ -2,96 +2,79 @@ import streamlit as st
 import numpy as np
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef
 from nltk.translate.bleu_score import sentence_bleu
+from rouge_score import rouge_scorer
 import sacrebleu
-import jieba
+import jieba  # 中文分词工具
 from collections import Counter
+
+# 计算困惑度并归一化
+def calculate_perplexity(text):
+    words = text.split()
+    total_log_prob = 0
+    total_length = len(words)
+
+    # 假设一个非常简单的基于词频的概率模型
+    word_freq = {}
+    for word in words:
+        if word in word_freq:
+            word_freq[word] += 1
+        else:
+            word_freq[word] = 1
+
+    for word in words:
+        prob = word_freq[word] / total_length
+        total_log_prob += np.log(prob)
+
+    avg_log_prob = total_log_prob / total_length
+    perplexity = np.exp(-avg_log_prob)
+
+    # 归一化处理，将困惑度值映射到0到100之间
+    normalized_perplexity = 100 / (1 + perplexity)
+    return normalized_perplexity
 
 # 中文分词函数
 def chinese_tokenize(text):
     return list(jieba.cut(text))
 
-# 计算ROUGE-1、ROUGE-2、ROUGE-L
-def compute_rouge(reference, hypothesis):
-    ref_tokens = chinese_tokenize(reference)
-    hyp_tokens = chinese_tokenize(hypothesis)
-
-    # 计算 ROUGE-1 (unigram)
-    ref_set = set(ref_tokens)
-    hyp_set = set(hyp_tokens)
-    common_tokens = ref_set & hyp_set
-    precision_1 = len(common_tokens) / len(hyp_set) if len(hyp_set) > 0 else 0
-    recall_1 = len(common_tokens) / len(ref_set) if len(ref_set) > 0 else 0
-    f1_1 = (2 * precision_1 * recall_1) / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 else 0
-
-    # 计算 ROUGE-2 (bigram)
-    ref_bigrams = set(zip(ref_tokens, ref_tokens[1:]))
-    hyp_bigrams = set(zip(hyp_tokens, hyp_tokens[1:]))
-    common_bigrams = ref_bigrams & hyp_bigrams
-    precision_2 = len(common_bigrams) / len(hyp_bigrams) if len(hyp_bigrams) > 0 else 0
-    recall_2 = len(common_bigrams) / len(ref_bigrams) if len(ref_bigrams) > 0 else 0
-    f1_2 = (2 * precision_2 * recall_2) / (precision_2 + recall_2) if (precision_2 + recall_2) > 0 else 0
-
-    # 计算 ROUGE-L (Longest Common Subsequence)
-    def longest_common_subsequence(a, b):
-        m = len(a)
-        n = len(b)
-        dp = [[0] * (n + 1) for _ in range(m + 1)]
-        for i in range(m):
-            for j in range(n):
-                if a[i] == b[j]:
-                    dp[i + 1][j + 1] = dp[i][j] + 1
-                else:
-                    dp[i + 1][j + 1] = max(dp[i + 1][j], dp[i][j + 1])
-        return dp[m][n]
-
-    lcs_len = longest_common_subsequence(ref_tokens, hyp_tokens)
-    precision_L = lcs_len / len(hyp_tokens) if len(hyp_tokens) > 0 else 0
-    recall_L = lcs_len / len(ref_tokens) if len(ref_tokens) > 0 else 0
-    f1_L = (2 * precision_L * recall_L) / (precision_L + recall_L) if (precision_L + recall_L) > 0 else 0
-
-    return f1_1, f1_2, f1_L
-
-# 计算BLEU和SacreBLEU
-def calculate_bleu_and_sacrebleu(references, hypotheses):
-    bleu_scores = [sentence_bleu([ref.split()], hyp.split()) for ref, hyp in zip(references, hypotheses)]
-    avg_bleu = np.mean(bleu_scores)
-    
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
-    return avg_bleu, sacre_bleu.score
-
 # 计算Precision和Recall
 def calculate_precision_recall(reference, hypothesis):
+    # 对中文文本进行分词
     ref_tokens = chinese_tokenize(reference)
     hyp_tokens = chinese_tokenize(hypothesis)
 
+    # 计算词频
     ref_counter = Counter(ref_tokens)
     hyp_counter = Counter(hyp_tokens)
 
-    common_tokens = sum((hyp_counter & ref_counter).values())
+    # 计算 Precision
+    common_tokens = sum((hyp_counter & ref_counter).values())  # 计算交集部分
     precision = common_tokens / len(hyp_tokens) if len(hyp_tokens) > 0 else 0
+
+    # 计算 Recall
     recall = common_tokens / len(ref_tokens) if len(ref_tokens) > 0 else 0
 
     return precision, recall
 
 def evaluate_metrics(y_true, y_pred, metric):
     # 对真实标签和预测标签进行分词
-    references = y_true
-    hypotheses = y_pred
+    references = [chinese_tokenize(ref) for ref in y_true]
+    hypotheses = [chinese_tokenize(pred) for pred in y_pred]
 
-    # 计算 ROUGE 分数
-    rouge1, rouge2, rougeL = [], [], []
-    for ref, hyp in zip(references, hypotheses):
-        f1_1, f1_2, f1_L = compute_rouge(ref, hyp)
-        rouge1.append(f1_1)
-        rouge2.append(f1_2)
-        rougeL.append(f1_L)
-    
-    rouge1_score = np.mean(rouge1)
-    rouge2_score = np.mean(rouge2)
-    rougeL_score = np.mean(rougeL)
+    # 准备ROUGE scorer
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
-    # 计算BLEU 和 SacreBLEU
-    bleu_score, sacre_bleu_score = calculate_bleu_and_sacrebleu(references, hypotheses)
+    # 计算ROUGE
+    rouge_scores = [scorer.score(' '.join(ref), ' '.join(pred)) for ref, pred in zip(references, hypotheses)]
+    rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
+    rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
+    rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
+
+    # 计算BLEU
+    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]
+    avg_bleu = np.mean(bleu_scores)
+
+    # 计算SacreBLEU
+    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
@@ -109,11 +92,11 @@ def evaluate_metrics(y_true, y_pred, metric):
         "Recall (classification)": recall,
         "F1 Score": f1,
         "MCC": mcc,
-        "ROUGE-1": rouge1_score,
-        "ROUGE-2": rouge2_score,
-        "ROUGE-L": rougeL_score,
-        "BLEU": bleu_score,
-        "SacreBLEU": sacre_bleu_score,
+        "ROUGE-1": rouge1,
+        "ROUGE-2": rouge2,
+        "ROUGE-L": rougeL,
+        "BLEU": avg_bleu,
+        "SacreBLEU": sacre_bleu.score,
         "Precision (generation)": generation_precision,
         "Recall (generation)": generation_recall
     }
@@ -143,6 +126,11 @@ if st.button("评估"):
 st.header("计算困惑度")
 st.markdown("""
 **困惑度** 是衡量语言模型预测文本的平均分支因子。它反映了模型对文本预测的不确定性。较低的困惑度表示较低的不确定性和较好的模型性能。
+
+**困惑度公式：**
+- 使用基于词频的简单模型计算词概率。
+- 计算每个词的概率的对数总和。
+- 归一化，使困惑度值映射到0到100之间。
 """)
 perplexity_input = st.text_area("输入文本计算困惑度", "this is a sample text for perplexity calculation")
 
