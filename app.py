@@ -4,6 +4,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
 import sacrebleu
+from collections import Counter
 
 # 计算困惑度并归一化
 def calculate_perplexity(text):
@@ -29,6 +30,25 @@ def calculate_perplexity(text):
     # 归一化处理，将困惑度值映射到0到100之间
     normalized_perplexity = 100 / (1 + perplexity)
     return normalized_perplexity
+
+# 计算Precision和Recall
+def calculate_precision_recall(reference, hypothesis):
+    # 将参考文本和生成文本分词
+    ref_tokens = reference.split()
+    hyp_tokens = hypothesis.split()
+
+    # 计算词频
+    ref_counter = Counter(ref_tokens)
+    hyp_counter = Counter(hyp_tokens)
+
+    # 计算 Precision
+    common_tokens = sum((hyp_counter & ref_counter).values())  # 计算交集部分
+    precision = common_tokens / len(hyp_tokens) if len(hyp_tokens) > 0 else 0
+
+    # 计算 Recall
+    recall = common_tokens / len(ref_tokens) if len(ref_tokens) > 0 else 0
+
+    return precision, recall
 
 def evaluate_metrics(y_true, y_pred, metric):
     references = [[ref] for ref in y_true]
@@ -57,17 +77,22 @@ def evaluate_metrics(y_true, y_pred, metric):
     f1 = f1_score(y_true, y_pred, average='macro', zero_division=1)
     mcc = matthews_corrcoef(y_true, y_pred)
 
+    # 计算Precision和Recall for generation task
+    generation_precision, generation_recall = calculate_precision_recall(' '.join(y_true), ' '.join(y_pred))
+
     results = {
         "Accuracy": accuracy,
-        "Precision": precision,
-        "Recall": recall,
+        "Precision (classification)": precision,
+        "Recall (classification)": recall,
         "F1 Score": f1,
         "MCC": mcc,
         "ROUGE-1": rouge1,
         "ROUGE-2": rouge2,
         "ROUGE-L": rougeL,
         "BLEU": avg_bleu,
-        "SacreBLEU": sacre_bleu.score
+        "SacreBLEU": sacre_bleu.score,
+        "Precision (generation)": generation_precision,
+        "Recall (generation)": generation_recall
     }
     
     return results.get(metric, "Metric not found")
@@ -78,7 +103,7 @@ st.header("计算其他指标")
 true_labels_input = st.text_area("输入真实标签 (专家认定符合要求的参考教学设计)", "this is a test, another test")
 pred_labels_input = st.text_area("输入预测标签 (大语言模型输出的教学设计，切记在内容和形式上与专家认定标准保持一致)", "this is a test, another example")
 
-metric = st.selectbox("选择评估指标", ["Accuracy", "Precision", "Recall", "F1 Score", "MCC", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BLEU", "SacreBLEU"])
+metric = st.selectbox("选择评估指标", ["Accuracy", "Precision (classification)", "Recall (classification)", "F1 Score", "MCC", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BLEU", "SacreBLEU", "Precision (generation)", "Recall (generation)"])
 
 if st.button("评估"):
     y_true = true_labels_input.split(", ")
