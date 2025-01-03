@@ -60,21 +60,25 @@ def evaluate_metrics(y_true, y_pred, metric):
     references = [chinese_tokenize(ref) for ref in y_true]
     hypotheses = [chinese_tokenize(pred) for pred in y_pred]
 
+    # 将分词后的文本转换为字符串（空格连接）
+    references_str = [' '.join(ref) for ref in references]
+    hypotheses_str = [' '.join(hyp) for hyp in hypotheses]
+
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
     # 计算ROUGE
-    rouge_scores = [scorer.score(' '.join(ref), ' '.join(pred)) for ref, pred in zip(references, hypotheses)]
+    rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(references_str, hypotheses_str)]
     rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
     rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
     rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
 
     # 计算BLEU
-    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]
+    bleu_scores = [sentence_bleu([ref.split()], hyp.split()) for ref, hyp in zip(references_str, hypotheses_str)]
     avg_bleu = np.mean(bleu_scores)
 
     # 计算SacreBLEU
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
+    sacre_bleu = sacrebleu.corpus_bleu(hypotheses_str, references_str)
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
