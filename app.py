@@ -5,7 +5,6 @@ from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
 import sacrebleu
 from collections import Counter
-import string
 
 # 计算困惑度并归一化
 def calculate_perplexity(text):
@@ -51,15 +50,9 @@ def calculate_precision_recall(reference, hypothesis):
 
     return precision, recall
 
-# 清洗文本（去除标点和小写化）
-def clean_text(text):
-    # 删除标点符号，并将所有文字转化为小写
-    text = text.translate(str.maketrans('', '', string.punctuation))
-    return text.lower()
-
 def evaluate_metrics(y_true, y_pred, metric):
-    references = [clean_text(ref) for ref in y_true]  # 清洗参考文本
-    hypotheses = [clean_text(pred) for pred in y_pred]  # 清洗生成文本
+    references = y_true
+    hypotheses = y_pred
 
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
@@ -75,7 +68,7 @@ def evaluate_metrics(y_true, y_pred, metric):
     avg_bleu = np.mean(bleu_scores)
 
     # 计算SacreBLEU
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, [[ref] for ref in references])
+    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
