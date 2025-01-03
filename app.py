@@ -51,20 +51,20 @@ def calculate_precision_recall(reference, hypothesis):
     return precision, recall
 
 def evaluate_metrics(y_true, y_pred, metric):
-    references = [[ref] for ref in y_true]
-    hypotheses = y_pred
+    references = [ref.split() for ref in y_true]  # 每个参考文本分词并包装成列表
+    hypotheses = [pred.split() for pred in y_pred]  # 每个生成文本分词并包装成列表
 
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
     # 计算ROUGE
-    rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(y_true, y_pred)]
+    rouge_scores = [scorer.score(' '.join(ref), ' '.join(pred)) for ref, pred in zip(references, hypotheses)]
     rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
     rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
     rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
 
     # 计算BLEU
-    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]
+    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]  # 每个参考文本为一个列表
     avg_bleu = np.mean(bleu_scores)
 
     # 计算SacreBLEU
