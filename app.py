@@ -36,11 +36,21 @@ def calculate_perplexity(text):
 def chinese_tokenize(text):
     return list(jieba.cut(text))
 
+# 去除停用词函数（这里可以自定义停用词列表）
+def remove_stopwords(tokens, stopwords=None):
+    if stopwords is None:
+        stopwords = set()  # 如果没有指定停用词表，则默认不去除停用词
+    return [word for word in tokens if word not in stopwords]
+
 # 计算Precision和Recall
-def calculate_precision_recall(reference, hypothesis):
+def calculate_precision_recall(reference, hypothesis, stopwords=None):
     # 对中文文本进行分词
     ref_tokens = chinese_tokenize(reference)
     hyp_tokens = chinese_tokenize(hypothesis)
+
+    # 去除停用词
+    ref_tokens = remove_stopwords(ref_tokens, stopwords)
+    hyp_tokens = remove_stopwords(hyp_tokens, stopwords)
 
     # 计算词频
     ref_counter = Counter(ref_tokens)
@@ -55,10 +65,14 @@ def calculate_precision_recall(reference, hypothesis):
 
     return precision, recall
 
-def evaluate_metrics(y_true, y_pred, metric):
+def evaluate_metrics(y_true, y_pred, metric, stopwords=None):
     # 对真实标签和预测标签进行分词
     references = [chinese_tokenize(ref) for ref in y_true]
     hypotheses = [chinese_tokenize(pred) for pred in y_pred]
+
+    # 去除停用词
+    references = [remove_stopwords(ref, stopwords) for ref in references]
+    hypotheses = [remove_stopwords(hyp, stopwords) for hyp in hypotheses]
 
     # 将分词后的文本转换为字符串（空格连接）
     references_str = [' '.join(ref) for ref in references]
@@ -88,7 +102,7 @@ def evaluate_metrics(y_true, y_pred, metric):
     mcc = matthews_corrcoef(y_true, y_pred)
 
     # 计算Precision和Recall for generation task
-    generation_precision, generation_recall = calculate_precision_recall(' '.join(y_true), ' '.join(y_pred))
+    generation_precision, generation_recall = calculate_precision_recall(' '.join(y_true), ' '.join(y_pred), stopwords)
 
     results = {
         "Accuracy": accuracy,
@@ -130,11 +144,6 @@ if st.button("评估"):
 st.header("计算困惑度")
 st.markdown("""
 **困惑度** 是衡量语言模型预测文本的平均分支因子。它反映了模型对文本预测的不确定性。较低的困惑度表示较低的不确定性和较好的模型性能。
-
-**困惑度公式：**
-- 使用基于词频的简单模型计算词概率。
-- 计算每个词的概率的对数总和。
-- 归一化，使困惑度值映射到0到100之间。
 """)
 perplexity_input = st.text_area("输入文本计算困惑度", "this is a sample text for perplexity calculation")
 
