@@ -4,7 +4,6 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
 import sacrebleu
-import jieba  # 中文分词工具
 from collections import Counter
 
 # 计算困惑度并归一化
@@ -32,15 +31,11 @@ def calculate_perplexity(text):
     normalized_perplexity = 100 / (1 + perplexity)
     return normalized_perplexity
 
-# 中文分词函数
-def chinese_tokenize(text):
-    return list(jieba.cut(text))
-
 # 计算Precision和Recall
 def calculate_precision_recall(reference, hypothesis):
-    # 对中文文本进行分词
-    ref_tokens = chinese_tokenize(reference)
-    hyp_tokens = chinese_tokenize(hypothesis)
+    # 将参考文本和生成文本分词
+    ref_tokens = reference.split()
+    hyp_tokens = hypothesis.split()
 
     # 计算词频
     ref_counter = Counter(ref_tokens)
@@ -56,9 +51,8 @@ def calculate_precision_recall(reference, hypothesis):
     return precision, recall
 
 def evaluate_metrics(y_true, y_pred, metric):
-    # 对真实标签和预测标签进行分词
-    references = [chinese_tokenize(ref) for ref in y_true]
-    hypotheses = [chinese_tokenize(pred) for pred in y_pred]
+    references = [ref.split() for ref in y_true]  # 每个参考文本分词并包装成列表
+    hypotheses = [pred.split() for pred in y_pred]  # 每个生成文本分词并包装成列表
 
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
@@ -70,7 +64,7 @@ def evaluate_metrics(y_true, y_pred, metric):
     rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
 
     # 计算BLEU
-    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]
+    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]  # 每个参考文本为一个列表
     avg_bleu = np.mean(bleu_scores)
 
     # 计算SacreBLEU
@@ -106,8 +100,8 @@ def evaluate_metrics(y_true, y_pred, metric):
 st.title("文本评估工具")
 
 st.header("计算其他指标")
-true_labels_input = st.text_area("输入真实标签 (专家认定符合要求的参考教学设计)", "这 是 一个 测试， 另一个 测试")
-pred_labels_input = st.text_area("输入预测标签 (大语言模型输出的教学设计，切记在内容和形式上与专家认定标准保持一致)", "这 是 一个 测试， 另一个 示例")
+true_labels_input = st.text_area("输入真实标签 (专家认定符合要求的参考教学设计)", "this is a test, another test")
+pred_labels_input = st.text_area("输入预测标签 (大语言模型输出的教学设计，切记在内容和形式上与专家认定标准保持一致)", "this is a test, another example")
 
 metric = st.selectbox("选择评估指标", ["Accuracy", "Precision (classification)", "Recall (classification)", "F1 Score", "MCC", "ROUGE-1", "ROUGE-2", "ROUGE-L", "BLEU", "SacreBLEU", "Precision (generation)", "Recall (generation)"])
 
