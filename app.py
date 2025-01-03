@@ -5,6 +5,7 @@ from nltk.translate.bleu_score import sentence_bleu
 from rouge_score import rouge_scorer
 import sacrebleu
 from collections import Counter
+import string
 
 # 计算困惑度并归一化
 def calculate_perplexity(text):
@@ -50,25 +51,31 @@ def calculate_precision_recall(reference, hypothesis):
 
     return precision, recall
 
+# 清洗文本（去除标点和小写化）
+def clean_text(text):
+    # 删除标点符号，并将所有文字转化为小写
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    return text.lower()
+
 def evaluate_metrics(y_true, y_pred, metric):
-    references = [ref.split() for ref in y_true]  # 每个参考文本分词并包装成列表
-    hypotheses = [pred.split() for pred in y_pred]  # 每个生成文本分词并包装成列表
+    references = [clean_text(ref) for ref in y_true]  # 清洗参考文本
+    hypotheses = [clean_text(pred) for pred in y_pred]  # 清洗生成文本
 
     # 准备ROUGE scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
 
     # 计算ROUGE
-    rouge_scores = [scorer.score(' '.join(ref), ' '.join(pred)) for ref, pred in zip(references, hypotheses)]
+    rouge_scores = [scorer.score(ref, pred) for ref, pred in zip(references, hypotheses)]
     rouge1 = np.mean([score['rouge1'].fmeasure for score in rouge_scores])
     rouge2 = np.mean([score['rouge2'].fmeasure for score in rouge_scores])
     rougeL = np.mean([score['rougeL'].fmeasure for score in rouge_scores])
 
     # 计算BLEU
-    bleu_scores = [sentence_bleu([ref], pred) for ref, pred in zip(references, hypotheses)]  # 每个参考文本为一个列表
+    bleu_scores = [sentence_bleu([ref.split()], pred.split()) for ref, pred in zip(references, hypotheses)]
     avg_bleu = np.mean(bleu_scores)
 
     # 计算SacreBLEU
-    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, references)
+    sacre_bleu = sacrebleu.corpus_bleu(hypotheses, [[ref] for ref in references])
 
     # 计算其他指标
     accuracy = accuracy_score(y_true, y_pred)
