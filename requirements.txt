@@ -8,4 +8,4 @@ scipy==1.13.1
 streamlit==1.35.0
 tokenizers==0.19.1
 tornado==6.4
-
+jieba
